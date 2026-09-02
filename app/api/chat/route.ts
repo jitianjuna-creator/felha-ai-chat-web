@@ -6,7 +6,7 @@ import {
 } from "@/lib/companion/language";
 import { isAllowedModel, SUMMARY_MODEL_ID } from "@/lib/companion/models";
 import { completeChat, OpenRouterError } from "@/lib/companion/openrouter";
-import { resolvedPersona } from "@/lib/companion/persona";
+import { repeatRewriteInstruction, resolvedPersona } from "@/lib/companion/persona";
 import {
   companionMaxTokens,
   companionTemperature,
@@ -16,7 +16,7 @@ import {
   maxUserInputChars,
   recentMessageLimit,
 } from "@/lib/companion/prompt";
-import { cleanedReply } from "@/lib/companion/reply";
+import { cleanedReply, isApproximateRepeat } from "@/lib/companion/reply";
 import type { ChatMessage, ClientClock } from "@/lib/companion/types";
 
 export const runtime = "nodejs";
@@ -121,7 +121,26 @@ export async function POST(request: Request): Promise<Response> {
     const previousAssistant = recent
       .filter((message) => message.role === "assistant")
       .map((message) => message.content);
-    const content = cleanedReply(reply, previousAssistant);
+    const repeatAgainst = [...previousAssistant.slice(-2), lastUser.content];
+    let content = cleanedReply(reply, previousAssistant);
+    if (isApproximateRepeat(content, repeatAgainst) || isApproximateRepeat(reply, repeatAgainst)) {
+      try {
+        reply = await completeChat({
+          apiKey,
+          model,
+          messages: [
+            ...requestMessages,
+            { role: "assistant", content: reply },
+            { role: "system", content: repeatRewriteInstruction },
+          ],
+          temperature: companionTemperature,
+          maxTokens: companionMaxTokens,
+        });
+        content = cleanedReply(reply, previousAssistant);
+      } catch {
+        // Keep the first reply if the retry fails.
+      }
+    }
     if (!content) {
       return jsonError(502, "空回复，请再试一次");
     }

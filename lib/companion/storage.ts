@@ -2,7 +2,7 @@ import { defaultModelId, isAllowedModel } from "./models";
 import { defaultPersona, resolvedPersona } from "./persona";
 import type { ChatMessage, StoredSession } from "./types";
 
-const storageKey = "felha.companion.session.v2";
+const storageKey = "felha.companion.session.v4";
 const listeners = new Set<() => void>();
 const serverSnapshot = emptySession();
 

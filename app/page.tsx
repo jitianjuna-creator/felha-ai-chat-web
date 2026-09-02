@@ -22,7 +22,9 @@ export default function HomePage() {
   );
   const [draft, setDraft] = useState("");
   const [personaOpen, setPersonaOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [sending, setSending] = useState(false);
+  const copyTimer = useRef<number>(0);
   const [error, setError] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -33,6 +35,12 @@ export default function HomePage() {
     }
     node.scrollTop = node.scrollHeight;
   }, [session.messages, sending]);
+
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(copyTimer.current);
+    };
+  }, []);
 
   const selectedModel = useMemo(
     () => modelOptions.find((item) => item.modelId === session.modelId) ?? modelOptions[0],
@@ -137,7 +145,7 @@ export default function HomePage() {
     setError("");
     updateSession((current) => ({
       ...current,
-      messages: [],
+      messages: emptySession(current.persona).messages,
       summary: "",
       summarizedCount: 0,
     }));
@@ -150,12 +158,27 @@ export default function HomePage() {
     }));
   }
 
+  async function copyChat() {
+    const text = formatChatTranscript(session.messages, selectedModel.title);
+    if (text.length === 0) {
+      return;
+    }
+    try {
+      await writeClipboard(text);
+      setCopied(true);
+      window.clearTimeout(copyTimer.current);
+      copyTimer.current = window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError("复制失败，请再试一次");
+    }
+  }
+
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[760px] flex-col px-3 py-3 sm:px-4">
       <header className="rounded-2xl bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-lg font-semibold">Ayu 聊天测试</h1>
+            <h1 className="text-lg font-semibold">阿柚聊天测试</h1>
             <p className="mt-1 text-sm text-[#888888]">
               完整记录只存在这个浏览器。发给模型的是滚动摘要和最近 {recentMessageLimit} 条。
             </p>
@@ -221,6 +244,14 @@ export default function HomePage() {
           <button type="button" className="rounded-lg px-3 py-2 text-sm text-[#4c8dff]" onClick={newChat}>
             新对话
           </button>
+          <button
+            type="button"
+            className="rounded-lg px-3 py-2 text-sm text-[#4c8dff] disabled:opacity-40"
+            onClick={() => void copyChat()}
+            disabled={session.messages.length === 0}
+          >
+            {copied ? "已复制" : "复制对话"}
+          </button>
         </div>
       </header>
 
@@ -277,9 +308,49 @@ function Bubble({ message }: { message: ChatMessage }) {
           isUser ? "bg-[#4c8dff] text-white" : "bg-[#f5f5f5] text-[#333333]"
         }`}
       >
-        <span className="opacity-70">{isUser ? "我：" : "Ayu："}</span>
+        <span className="opacity-70">{isUser ? "我：" : "阿柚："}</span>
         {message.content}
       </div>
     </div>
   );
+}
+
+function formatChatTranscript(messages: ChatMessage[], modelTitle: string): string {
+  const lines = messages
+    .map((message) => {
+      if (message.role === "user") {
+        return `我：${message.content}`;
+      }
+      if (message.role === "assistant") {
+        return `阿柚：${message.content}`;
+      }
+      if (message.role === "notice") {
+        return `系统：${message.content}`;
+      }
+      return "";
+    })
+    .filter((line) => line.length > 0);
+  if (lines.length === 0) {
+    return "";
+  }
+  return [`模型：${modelTitle}`, "", ...lines].join("\n");
+}
+
+async function writeClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.left = "-9999px";
+  document.body.appendChild(area);
+  area.select();
+  const copied = document.execCommand("copy");
+  document.body.removeChild(area);
+  if (!copied) {
+    throw new Error("copy failed");
+  }
 }

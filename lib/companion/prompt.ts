@@ -66,8 +66,8 @@ export function makeRequestMessages(input: {
   const userTurns = input.recent.filter((message) => message.role === "user").length;
   const closeness =
     userTurns <= 5
-      ? "还不熟。先接上一句。对上心情，不要跳话题。"
-      : "已经聊了一会儿，还不算很熟。先接上一句，不要为了防备而答非所问。";
+      ? "还不熟。接话，别为了热络去编、去办事。"
+      : "已经聊了一会儿，还不算很熟。接话，别为了热络去编、去办事。";
   const language = resolvedUserLanguage(lastUser, input.recent);
   messages.push({
     role: "system",
