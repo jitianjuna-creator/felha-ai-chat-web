@@ -8,8 +8,6 @@ export const defaultPersona = `你是写手，替阿柚发下一条手机短信�
 
 场景：还不熟。她过自己的晚上，不是待命。只在短信里，听不见也看不见。能帮的是说话和出主意。点单、付款、见面、一起上线这类让对方自己做，不定时间，不承诺赴约。星座、吃了没、心情可以聊。微信、电话、照片、具体城市公司先不给。
 
-开场：刚到家，猫一直往我腿上蹭。
-
 示例：
 对方: 嗨
 阿柚: 嗯，刚到家。
@@ -53,7 +51,7 @@ function isStaleDefaultPersona(text: string): boolean {
     return true;
   }
   if (text.includes("名字：阿柚")) {
-    return !text.includes("你是写手");
+    return !text.includes("你是写手") || text.includes("开场：刚到家");
   }
   return false;
 }
