@@ -46,13 +46,20 @@ export function makeRequestMessages(input: {
       content: `更早对话的摘要，只作背景，不要照抄：\n${summary}`,
     });
   }
+  const previousAssistant: string[] = [];
   for (const message of input.recent) {
     if (message.role !== "user" && message.role !== "assistant") {
       continue;
     }
+    if (message.role === "assistant") {
+      const content = cleanedReply(message.content, previousAssistant);
+      previousAssistant.push(content);
+      messages.push({ role: "assistant", content });
+      continue;
+    }
     messages.push({
-      role: message.role,
-      content: message.role === "assistant" ? cleanedReply(message.content) : message.content,
+      role: "user",
+      content: message.content,
     });
   }
   const lastUser = [...input.recent].reverse().find((message) => message.role === "user")?.content ?? "";

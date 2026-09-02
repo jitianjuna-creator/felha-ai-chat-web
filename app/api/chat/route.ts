@@ -114,7 +114,10 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
 
-    const content = cleanedReply(reply);
+    const previousAssistant = recent
+      .filter((message) => message.role === "assistant")
+      .map((message) => message.content);
+    const content = cleanedReply(reply, previousAssistant);
     if (!content) {
       return jsonError(502, "空回复，请再试一次");
     }

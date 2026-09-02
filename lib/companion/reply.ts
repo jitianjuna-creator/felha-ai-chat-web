@@ -79,10 +79,57 @@ const faces = [
 
 const faceSet = new Set(faces.map((face) => face.toLowerCase()));
 
-export function cleanedReply(text: string): string {
+export function cleanedReply(text: string, previousAssistant: string[] = []): string {
   return shorteningReply(
-    strippingLeadingLaugh(strippingEmojis(strippingSpeakerPrefix(text))),
+    strippingRepeatedCatchphrases(
+      strippingInlineLaugh(strippingLeadingLaugh(strippingEmojis(strippingSpeakerPrefix(text)))),
+      previousAssistant,
+    ),
   );
+}
+
+export function strippingInlineLaugh(text: string): string {
+  const stripped = text
+    .replace(/[哈嘿呵]{2,}/g, "")
+    .replace(/(haha|hehe|lol)+/gi, "")
+    .replace(/[，,]{2,}/g, "，")
+    .replace(/^[，,\s]+|[，,\s]+$/g, "")
+    .trim();
+  return stripped.length > 0 ? stripped : text.trim();
+}
+
+export function strippingRepeatedCatchphrases(text: string, previousAssistant: string[]): string {
+  let result = text.replace(
+    /[，,\s]*(刚)?(我)?还?以为你(也是)?(外国人|老外)[^，。！？\n]{0,12}问路[^，。！？\n]*/g,
+    "",
+  );
+  result = result.replace(/[，,\s]*(外国人|老外)[^，。！？\n]{0,8}问路[^，。！？\n]*/g, "");
+  const previous = previousAssistant.join("\n");
+  if (previous.length > 0) {
+    const kept = splittingClauses(result).filter((clause) => {
+      const compact = compactClause(clause);
+      if (compact.length < 6) {
+        return true;
+      }
+      return !previousAssistant.some((item) => compactClause(item).includes(compact));
+    });
+    if (kept.length > 0) {
+      result = kept.join("，");
+    }
+  }
+  result = result.replace(/[，,]{2,}/g, "，").replace(/^[，,\s]+|[，,\s]+$/g, "").trim();
+  return result.length > 0 ? result : text.trim();
+}
+
+function splittingClauses(text: string): string[] {
+  return text
+    .split(/[，,、。！？!?…]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function compactClause(text: string): string {
+  return text.replace(/[哈嘿呵的了呢啊呀吧嘛\s，,。！？!?]/g, "");
 }
 
 export function strippingSpeakerPrefix(text: string): string {
