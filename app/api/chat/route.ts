@@ -73,16 +73,20 @@ export async function POST(request: Request): Promise<Response> {
   try {
     let summary = existingSummary;
     if (unsummarized.length > 0) {
-      summary = await completeChat({
-        apiKey,
-        model: SUMMARY_MODEL_ID,
-        messages: makeSummaryMessages({
-          existingSummary,
-          unsummarized,
-        }),
-        temperature: 0.2,
-        maxTokens: 400,
-      });
+      try {
+        summary = await completeChat({
+          apiKey,
+          model: SUMMARY_MODEL_ID,
+          messages: makeSummaryMessages({
+            existingSummary,
+            unsummarized,
+          }),
+          temperature: 0.2,
+          maxTokens: 400,
+        });
+      } catch {
+        summary = existingSummary;
+      }
     }
 
     const requestMessages = makeRequestMessages({

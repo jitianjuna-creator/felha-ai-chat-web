@@ -81,11 +81,27 @@ const faceSet = new Set(faces.map((face) => face.toLowerCase()));
 
 export function cleanedReply(text: string, previousAssistant: string[] = []): string {
   return shorteningReply(
-    strippingRepeatedCatchphrases(
-      strippingInlineLaugh(strippingLeadingLaugh(strippingEmojis(strippingSpeakerPrefix(text)))),
+    strippingRepeatedSorry(
+      strippingRepeatedCatchphrases(
+        strippingInlineLaugh(
+          strippingLeadingLaugh(
+            strippingEmojis(strippingSpeakerPrefix(strippingThinkingTags(text))),
+          ),
+        ),
+        previousAssistant,
+      ),
       previousAssistant,
     ),
   );
+}
+
+export function strippingThinkingTags(text: string): string {
+  const stripped = text
+    .replace(/<[\w:-]*think[\w:-]*>[\s\S]*?<\/[\w:-]*think[\w:-]*>/gi, "")
+    .replace(/<\/?[\w:-]*think[\w:-]*>/gi, "")
+    .replace(/<\/?redacted_thinking>/gi, "")
+    .trim();
+  return stripped.length > 0 ? stripped : text.replace(/<\/?[^>]+>/g, "").trim();
 }
 
 export function strippingInlineLaugh(text: string): string {
@@ -119,6 +135,15 @@ export function strippingRepeatedCatchphrases(text: string, previousAssistant: s
   }
   result = result.replace(/[，,]{2,}/g, "，").replace(/^[，,\s]+|[，,\s]+$/g, "").trim();
   return result.length > 0 ? result : text.trim();
+}
+
+export function strippingRepeatedSorry(text: string, previousAssistant: string[]): string {
+  const alreadySaidSorry = previousAssistant.some((item) => /抱歉|sorry/i.test(item));
+  const stripped = alreadySaidSorry
+    ? text.replace(/[，,\s]*(抱歉|sorry)[。.!！]?/gi, "")
+    : text.replace(/[，,\s]+(抱歉|sorry)[。.!！]?$/i, "");
+  const cleaned = stripped.replace(/[，,]{2,}/g, "，").replace(/^[，,\s]+|[，,\s]+$/g, "").trim();
+  return cleaned.length > 0 ? cleaned : text.trim();
 }
 
 function splittingClauses(text: string): string[] {
