@@ -1,28 +1,8 @@
 import { detectUserLanguageIfPresent } from "./language";
 
-const maxSpokenWords = 12;
-const maxSpokenHanChars = 22;
-
-const laughTokens = new Set([
-  "haha",
-  "hahaha",
-  "hahahaha",
-  "hahahahaha",
-  "hehe",
-  "hehehe",
-  "lol",
-  "loll",
-  "lmao",
-  "lmfao",
-  "哈哈",
-  "哈哈哈",
-  "哈哈哈哈",
-  "嘿嘿",
-  "呵呵",
-  "ههه",
-  "هههه",
-  "ههههه",
-]);
+const maxSpokenWords = 36;
+const maxSpokenHanChars = 80;
+const maxSpokenSentences = 3;
 
 const faces = [
   ":-)",
@@ -83,11 +63,7 @@ export function cleanedReply(text: string, previousAssistant: string[] = []): st
   return shorteningReply(
     strippingRepeatedSorry(
       strippingRepeatedCatchphrases(
-        strippingInlineLaugh(
-          strippingLeadingLaugh(
-            strippingEmojis(strippingSpeakerPrefix(strippingThinkingTags(text))),
-          ),
-        ),
+        strippingEmojis(strippingSpeakerPrefix(strippingThinkingTags(text))),
         previousAssistant,
       ),
       previousAssistant,
@@ -102,16 +78,6 @@ export function strippingThinkingTags(text: string): string {
     .replace(/<\/?redacted_thinking>/gi, "")
     .trim();
   return stripped.length > 0 ? stripped : text.replace(/<\/?[^>]+>/g, "").trim();
-}
-
-export function strippingInlineLaugh(text: string): string {
-  const stripped = text
-    .replace(/[哈嘿呵]{2,}/g, "")
-    .replace(/(haha|hehe|lol)+/gi, "")
-    .replace(/[，,]{2,}/g, "，")
-    .replace(/^[，,\s]+|[，,\s]+$/g, "")
-    .trim();
-  return stripped.length > 0 ? stripped : text.trim();
 }
 
 export function strippingRepeatedCatchphrases(text: string, previousAssistant: string[]): string {
@@ -159,7 +125,7 @@ function compactClause(text: string): string {
 
 export function strippingSpeakerPrefix(text: string): string {
   let result = text.trim();
-  const prefixes = ["Ayu:", "Ayu：", "AI:", "AI：", "Assistant:", "Assistant："];
+  const prefixes = ["阿柚:", "阿柚：", "Ayu:", "Ayu：", "AI:", "AI：", "Assistant:", "Assistant："];
   for (const prefix of prefixes) {
     if (result.toLowerCase().startsWith(prefix.toLowerCase())) {
       result = result.slice(prefix.length).trim();
@@ -208,43 +174,34 @@ export function strippingEmoticons(text: string): string {
   return kept.join(" ");
 }
 
-export function strippingLeadingLaugh(text: string): string {
-  const words = text.split(/\s+/).filter((word) => word.length > 0);
-  while (words.length > 0) {
-    const token = words[0]
-      .toLowerCase()
-      .replace(/[.,!?~…،!？。，]+$/g, "");
-    if (!laughTokens.has(token)) {
-      break;
-    }
-    words.shift();
-  }
-  const kept = words.join(" ");
-  return kept.length > 0 ? kept : text.trim();
-}
-
 export function shorteningReply(text: string): string {
   const collapsed = text
     .split(/\n+/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .slice(0, 2)
+    .slice(0, maxSpokenSentences)
     .join(" ");
   const sentences = splittingSpokenSentences(collapsed);
-  const first = sentences[0];
-  if (!first) {
+  if (sentences.length === 0) {
     return collapsed;
   }
   const prefersChinese = detectUserLanguageIfPresent(collapsed) === "chinese";
-  const keptFirst = cappingSpokenLength(first, prefersChinese);
-  if (spokenLengthIsEnough(keptFirst, prefersChinese) || sentences.length < 2) {
-    return keptFirst;
+  const kept: string[] = [];
+  for (const sentence of sentences) {
+    if (kept.length >= maxSpokenSentences) {
+      break;
+    }
+    const candidate = kept.length === 0 ? sentence : joinSpoken(kept, sentence, prefersChinese);
+    if (kept.length > 0 && spokenLengthExceeds(candidate, prefersChinese)) {
+      break;
+    }
+    kept.push(sentence);
   }
-  const combined = cappingSpokenLength(`${keptFirst} ${sentences[1]}`, prefersChinese);
-  if (spokenLengthExceeds(combined, prefersChinese)) {
-    return keptFirst;
-  }
-  return combined;
+  return kept.join(prefersChinese ? "" : " ").trim() || sentences[0];
+}
+
+function joinSpoken(kept: string[], sentence: string, prefersChinese: boolean): string {
+  return prefersChinese ? `${kept.join("")}${sentence}` : `${kept.join(" ")} ${sentence}`;
 }
 
 function splittingSpokenSentences(text: string): string[] {
@@ -292,25 +249,10 @@ function spokenVisibleCount(text: string): number {
   return [...text].filter((char) => !/\s/.test(char)).length;
 }
 
-function spokenLengthIsEnough(text: string, prefersChinese: boolean): boolean {
-  return prefersChinese ? spokenVisibleCount(text) >= 8 : spokenWordCount(text) >= 4;
-}
-
 function spokenLengthExceeds(text: string, prefersChinese: boolean): boolean {
   return prefersChinese
     ? spokenVisibleCount(text) > maxSpokenHanChars
     : spokenWordCount(text) > maxSpokenWords;
-}
-
-function cappingSpokenLength(text: string, prefersChinese: boolean): string {
-  const trimmed = text.trim();
-  if (!spokenLengthExceeds(trimmed, prefersChinese)) {
-    return trimmed;
-  }
-  if (prefersChinese) {
-    return [...trimmed].slice(0, maxSpokenHanChars).join("").trim() || trimmed;
-  }
-  return trimmed.split(/\s+/).slice(0, maxSpokenWords).join(" ");
 }
 
 function isEmojiPresentation(char: string): boolean {

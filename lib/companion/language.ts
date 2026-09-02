@@ -55,11 +55,11 @@ export function languageLockInstruction(language: UserLanguage): string {
 export function languageRewriteInstruction(language: UserLanguage): string {
   switch (language) {
     case "chinese":
-      return "上一稿把英文写进中文了。用同一意思改成纯中文。不要英文单词。一样短，能一句就一句。";
+      return "上一稿把英文写进中文了。用同一意思改成纯中文。不要英文单词。还是短信，不要变成长文。";
     case "arabic":
-      return "上一稿用了中文。用同一意思改成纯阿拉伯语。一个汉字都不要。一样短，能一句就一句。";
+      return "上一稿用了中文。用同一意思改成纯阿拉伯语。一个汉字都不要。还是短信，不要变成长文。";
     case "latin":
-      return "上一稿用了中文。用同一意思改成纯英文。一个汉字都不要。一样短，能一句就一句。";
+      return "上一稿用了中文。用同一意思改成纯英文。一个汉字都不要。还是短信，不要变成长文。";
   }
 }
 
