@@ -13,6 +13,7 @@ import {
   writeSession,
 } from "@/lib/companion/storage";
 import type { ChatMessage, StoredSession } from "@/lib/companion/types";
+import { EvalPanel } from "./EvalPanel";
 
 export default function HomePage() {
   const session = useSyncExternalStore(
@@ -253,6 +254,12 @@ export default function HomePage() {
             {copied ? "已复制" : "复制对话"}
           </button>
         </div>
+        <EvalPanel
+          modelId={session.modelId}
+          modelTitle={selectedModel.title}
+          persona={session.persona}
+          busy={sending}
+        />
       </header>
 
       <section

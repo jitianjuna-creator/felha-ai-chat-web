@@ -1,22 +1,13 @@
 import { localClockFromDate } from "@/lib/companion/clock";
+import { isAllowedModel } from "@/lib/companion/models";
+import { OpenRouterError } from "@/lib/companion/openrouter";
+import { resolvedPersona } from "@/lib/companion/persona";
 import {
-  languageRewriteInstruction,
-  resolvedUserLanguage,
-  shouldRewriteLanguage,
-} from "@/lib/companion/language";
-import { isAllowedModel, SUMMARY_MODEL_ID } from "@/lib/companion/models";
-import { completeChat, OpenRouterError } from "@/lib/companion/openrouter";
-import { repeatRewriteInstruction, resolvedPersona } from "@/lib/companion/persona";
-import {
-  companionMaxTokens,
-  companionTemperature,
-  makeRequestMessages,
-  makeSummaryMessages,
   maxUnsummarizedMessages,
   maxUserInputChars,
   recentMessageLimit,
 } from "@/lib/companion/prompt";
-import { cleanedReply, isApproximateRepeat } from "@/lib/companion/reply";
+import { generateCompanionReply } from "@/lib/companion/turn";
 import type { ChatMessage, ClientClock } from "@/lib/companion/types";
 
 export const runtime = "nodejs";
@@ -71,76 +62,15 @@ export async function POST(request: Request): Promise<Response> {
   const clock = parseClock(body.clock);
 
   try {
-    let summary = existingSummary;
-    if (unsummarized.length > 0) {
-      try {
-        summary = await completeChat({
-          apiKey,
-          model: SUMMARY_MODEL_ID,
-          messages: makeSummaryMessages({
-            existingSummary,
-            unsummarized,
-          }),
-          temperature: 0.2,
-          maxTokens: 400,
-        });
-      } catch {
-        summary = existingSummary;
-      }
-    }
-
-    const requestMessages = makeRequestMessages({
-      persona,
-      recent,
-      summary,
-      clock,
-    });
-    let reply = await completeChat({
+    const { content, summary } = await generateCompanionReply({
       apiKey,
       model,
-      messages: requestMessages,
-      temperature: companionTemperature,
-      maxTokens: companionMaxTokens,
+      persona,
+      recent,
+      unsummarized,
+      summary: existingSummary,
+      clock,
     });
-
-    const language = resolvedUserLanguage(lastUser.content, recent);
-    if (shouldRewriteLanguage(language, reply)) {
-      reply = await completeChat({
-        apiKey,
-        model,
-        messages: [
-          ...requestMessages,
-          { role: "assistant", content: reply },
-          { role: "system", content: languageRewriteInstruction(language) },
-        ],
-        temperature: companionTemperature,
-        maxTokens: companionMaxTokens,
-      });
-    }
-
-    const previousAssistant = recent
-      .filter((message) => message.role === "assistant")
-      .map((message) => message.content);
-    const repeatAgainst = [...previousAssistant.slice(-2), lastUser.content];
-    let content = cleanedReply(reply, previousAssistant);
-    if (isApproximateRepeat(content, repeatAgainst) || isApproximateRepeat(reply, repeatAgainst)) {
-      try {
-        reply = await completeChat({
-          apiKey,
-          model,
-          messages: [
-            ...requestMessages,
-            { role: "assistant", content: reply },
-            { role: "system", content: repeatRewriteInstruction },
-          ],
-          temperature: companionTemperature,
-          maxTokens: companionMaxTokens,
-        });
-        content = cleanedReply(reply, previousAssistant);
-      } catch {
-        // Keep the first reply if the retry fails.
-      }
-    }
     if (!content) {
       return jsonError(502, "空回复，请再试一次");
     }
