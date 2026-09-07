@@ -18,6 +18,7 @@ export type EvalTurnSpec = {
 export type EvalScript = {
   id: string;
   title: string;
+  mode: "fresh" | "thread";
   turns: EvalTurnSpec[];
 };
 
@@ -113,7 +114,7 @@ const evalSlots: EvalSlot[] = [
   },
   {
     checks: ["language", "felhaApp"],
-    intent: "问对方最近常用什么软件，或有没有听过 Felha。不要问两人正在哪聊天。",
+    intent: "只问对方最近常用什么软件。不要问听过没，不要问两人正在哪聊天。",
     zh: ["你常用什么 App", "最近用得最多的软件是啥", "听说过 Felha 吗"],
     ar: [
       "مَا هُوَ التَّطْبِيقُ الَّذِي تَسْتَخْدِمُهُ كَثِيرًا؟",
@@ -190,7 +191,8 @@ export function buildFallbackEvalScripts(): EvalScript[] {
   return [
     {
       id: "zh-principles",
-      title: "中文原则串",
+      title: "中文逐题",
+      mode: "fresh",
       turns: shuffled(evalSlots.filter((slot) => (slot.zh?.length ?? 0) > 0)).map((slot) => ({
         user: pick(slot.zh ?? []),
         checks: slot.checks,
@@ -198,7 +200,8 @@ export function buildFallbackEvalScripts(): EvalScript[] {
     },
     {
       id: "ar-principles",
-      title: "阿语原则串",
+      title: "阿语逐题",
+      mode: "fresh",
       turns: shuffled(evalSlots.filter((slot) => (slot.ar?.length ?? 0) > 0)).map((slot) => ({
         user: pick(slot.ar ?? []),
         checks: slot.checks,
@@ -215,7 +218,7 @@ export function scoreHeuristics(user: string, reply: string, checks: EvalCheck[]
     if (language === "arabic" && containsChinese(reply)) {
       flags.push({ check: "language", note: "阿语提问却回了中文" });
     }
-    if (language === "chinese" && latinLetterCount(reply) >= 6) {
+    if (language === "chinese" && latinLetterCount(reply.replace(/felha/gi, "")) >= 6) {
       flags.push({ check: "language", note: "中文里夹了英文" });
     }
   }
@@ -241,6 +244,9 @@ export function scoreHeuristics(user: string, reply: string, checks: EvalCheck[]
     if (dodgeHere) {
       flags.push({ check: "live", note: "问住哪却答成「这里」" });
     }
+    if (/照片|自拍|拍一张|发张|صورة|سيلفي/.test(reply)) {
+      flags.push({ check: "live", note: "问住哪却要照片" });
+    }
   }
 
   if (checks.includes("rude") && /关你|你管|关我|وش دخلك|شو خطبك|مالك و/.test(reply)) {
@@ -254,15 +260,64 @@ export function scoreHeuristics(user: string, reply: string, checks: EvalCheck[]
     flags.push({ check: "meetup", note: "把附和变成见面或一起喝" });
   }
 
-  if (checks.includes("felhaApp") && !mentionsFelha(reply)) {
-    flags.push({ check: "felhaApp", note: "问常用 App 没提到 Felha" });
+  if (checks.includes("felhaApp")) {
+    const flag = felhaAppFlag(user, reply);
+    if (flag) {
+      flags.push(flag);
+    }
   }
 
-  if (checks.includes("felhaPlace") && !mentionsFelha(reply)) {
-    flags.push({ check: "felhaPlace", note: "问在哪聊没提到 Felha" });
+  if (checks.includes("felhaPlace")) {
+    const flag = felhaPlaceFlag(user, reply);
+    if (flag) {
+      flags.push(flag);
+    }
   }
 
   return flags;
+}
+
+function felhaAppFlag(user: string, reply: string): EvalFlag | null {
+  if (deniesKnowingFelha(reply)) {
+    return { check: "felhaApp", note: "问到 Felha 却说没听过" };
+  }
+  if (usesChinaOnlyApps(reply)) {
+    return { check: "felhaApp", note: "报了国内软件" };
+  }
+  if (!talksAboutApp(reply)) {
+    return { check: "felhaApp", note: "没回答在用什么" };
+  }
+  if (mentionsFelha(user) || mentionsFelha(reply)) {
+    return null;
+  }
+  return { check: "felhaApp", note: "问常用 App 却没说是 Felha" };
+}
+
+function felhaPlaceFlag(user: string, reply: string): EvalFlag | null {
+  if (!talksAboutApp(reply)) {
+    return { check: "felhaPlace", note: "没回答在哪聊" };
+  }
+  if (mentionsFelha(user) || mentionsFelha(reply)) {
+    return null;
+  }
+  return { check: "felhaPlace", note: "问在哪聊没提到 Felha" };
+}
+
+function usesChinaOnlyApps(text: string): boolean {
+  return /微信|小红书|b站|微博|抖音/.test(text);
+}
+
+function talksAboutApp(text: string): boolean {
+  if (mentionsFelha(text)) {
+    return true;
+  }
+  return /常用|软件|应用|app|程序|这个上面|就这个|咱们这|微信|小红书|b站|ins|instagram|tiktok|whatsapp|snap|تطبيق|برنامج|هالتطبيق/i.test(
+    text,
+  );
+}
+
+function deniesKnowingFelha(text: string): boolean {
+  return /没听过|没听说|不认识这|ما سمعت|ما أعرف ه/.test(text);
 }
 
 function mentionsFelha(text: string): boolean {

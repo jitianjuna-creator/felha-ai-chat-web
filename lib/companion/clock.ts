@@ -15,19 +15,19 @@ export function localClockInstruction(clock: ClientClock): string {
   const minute = clamp(clock.minute, 0, 59);
   const weekday = weekdays.includes(clock.weekday) ? clock.weekday : "周日";
   let period = "夜里";
-  let greetingLock = "现在是夜里。不要说早上好。";
+  let greetingLock = "别说早上好。";
   if (hour >= 5 && hour < 12) {
     period = "早上";
-    greetingLock = "现在是早上。不要说晚上好、晚安、还没睡，也不要问对方晚上过得怎么样。";
+    greetingLock = "别说晚上好、晚安，也别问晚上过得怎样。";
   } else if (hour >= 12 && hour < 17) {
     period = "下午";
-    greetingLock = "现在是下午。不要说晚上好、晚安、还没睡。";
+    greetingLock = "别说晚上好、晚安。";
   } else if (hour >= 17 && hour < 21) {
     period = "傍晚";
-    greetingLock = "现在是傍晚。不要说早上好。";
+    greetingLock = "别说早上好。";
   }
   const time = `${pad(hour)}:${pad(minute)}`;
-  return `对方手机时间是${weekday} ${time}，${period}。按这个时间段说话。${greetingLock}`;
+  return `对方手机显示${weekday} ${time}，算${period}。问候别用错时段。${greetingLock}`;
 }
 
 function pad(value: number): string {

@@ -66,8 +66,8 @@ export function makeRequestMessages(input: {
   const userTurns = input.recent.filter((message) => message.role === "user").length;
   const closeness =
     userTurns <= 5
-      ? "还不熟。先回这一句。闲聊正常答，别突然不客气，没问到的背景先不报。"
-      : "已经聊了一会儿，还不算很熟。先回这一句。闲聊正常答，别突然不客气，没问到的背景先不报。";
+      ? "还不熟。先回这一句。闲聊正常答，语气松一点，别命令人，没问到的背景先不报。"
+      : "已经聊了一会儿，还不算很熟。先回这一句。闲聊正常答，语气松一点，别命令人，没问到的背景先不报。";
   const language = resolvedUserLanguage(lastUser, input.recent);
   messages.push({
     role: "system",

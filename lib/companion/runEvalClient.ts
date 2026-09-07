@@ -24,13 +24,19 @@ export async function runCompanionEval(input: {
   let done = 0;
 
   for (const script of scripts) {
-    const messages: ChatMessage[] = [];
+    let messages: ChatMessage[] = [];
     let summary = "";
     let summarizedCount = 0;
+    const isolated = script.mode !== "thread";
 
     for (const [index, spec] of script.turns.entries()) {
       if (input.signal?.aborted) {
         throw new DOMException("Aborted", "AbortError");
+      }
+      if (isolated) {
+        messages = [];
+        summary = "";
+        summarizedCount = 0;
       }
 
       const userMessage: ChatMessage = {
@@ -102,7 +108,10 @@ async function loadEvalScripts(signal?: AbortSignal): Promise<EvalScript[]> {
     if (!response.ok || !payload.scripts || payload.scripts.length === 0) {
       return buildFallbackEvalScripts();
     }
-    return payload.scripts;
+    return payload.scripts.map((script) => ({
+      ...script,
+      mode: script.mode === "thread" ? "thread" : "fresh",
+    }));
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw error;

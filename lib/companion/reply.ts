@@ -62,10 +62,35 @@ const faceSet = new Set(faces.map((face) => face.toLowerCase()));
 export function cleanedReply(text: string, previousAssistant: string[] = []): string {
   return shorteningReply(
     strippingRepeatedSorry(
-      strippingEmojis(strippingSpeakerPrefix(strippingThinkingTags(text))),
+      strippingEmojis(
+        strippingSpeakerPrefix(strippingThinkingTags(strippingPromptLeak(text))),
+      ),
       previousAssistant,
     ),
   );
+}
+
+const promptLeakPattern =
+  /要放阿柚|不是待命|按这个时间段|对方手机时间|对方手机显示|只输出短信|写手[，,]替阿柚|场景：|在傍晚的场景|在早上的场景|不要说早上好|不要说晚上好|问候别用错时段|先回这一句|别突然不客气|按 Felha 用户/;
+
+export function looksLikePromptLeak(text: string): boolean {
+  return promptLeakPattern.test(text);
+}
+
+export function strippingPromptLeak(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return "";
+  }
+  const sentences = splittingSpokenSentences(trimmed);
+  if (sentences.length === 0) {
+    return looksLikePromptLeak(trimmed) ? "" : trimmed;
+  }
+  const kept = sentences.filter((sentence) => !looksLikePromptLeak(sentence));
+  if (kept.length === 0) {
+    return looksLikePromptLeak(trimmed) ? "" : trimmed;
+  }
+  return kept.join("").trim();
 }
 
 export function strippingThinkingTags(text: string): string {

@@ -81,6 +81,7 @@ export default function HomePage() {
       ...current,
       messages: nextMessages,
     });
+    const startedAt = Date.now();
 
     try {
       const response = await fetch("/api/chat", {
@@ -99,6 +100,7 @@ export default function HomePage() {
       if (!response.ok || !payload.content) {
         throw new Error(payload.error || "请求失败");
       }
+      await waitForTyping(payload.content, Date.now() - startedAt);
       const assistantMessage: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
@@ -341,6 +343,16 @@ function formatChatTranscript(messages: ChatMessage[], modelTitle: string): stri
     return "";
   }
   return [`模型：${modelTitle}`, "", ...lines].join("\n");
+}
+
+async function waitForTyping(reply: string, elapsedMs: number): Promise<void> {
+  const visible = [...reply].filter((char) => !/\s/.test(char)).length;
+  const natural = 1800 + visible * 85 + Math.floor(Math.random() * 900);
+  const waitMs = Math.max(0, Math.min(7000, natural) - elapsedMs);
+  if (waitMs <= 0) {
+    return;
+  }
+  await new Promise((resolve) => window.setTimeout(resolve, waitMs));
 }
 
 async function writeClipboard(text: string): Promise<void> {

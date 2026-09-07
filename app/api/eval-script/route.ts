@@ -18,8 +18,8 @@ export async function POST(): Promise<Response> {
     ]);
     return Response.json({
       scripts: [
-        { id: "zh-principles", title: "中文原则串", turns: zhTurns },
-        { id: "ar-principles", title: "阿语原则串", turns: arTurns },
+        { id: "zh-principles", title: "中文逐题", mode: "fresh", turns: zhTurns },
+        { id: "ar-principles", title: "阿语逐题", mode: "fresh", turns: arTurns },
       ],
     });
   } catch (error) {

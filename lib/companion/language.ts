@@ -44,29 +44,29 @@ export function resolvedUserLanguage(
 export function languageLockInstruction(language: UserLanguage): string {
   switch (language) {
     case "chinese":
-      return "对方刚用中文。只用中文回。不要夹任何英文单词。";
+      return "对方刚用中文。只用中文回。不要夹英文单词。Felha 这个名字可以照写。";
     case "arabic":
-      return "对方刚用阿拉伯语。只用阿拉伯语回。不要出现中文。";
+      return "对方刚用阿拉伯语。只用阿拉伯语回。不要出现中文，不要照抄中文示例。Felha 可以写拉丁文或阿语习惯写法。";
     case "latin":
-      return "对方刚用英语或印地英语。只用那种语言回。不要出现中文。";
+      return "对方刚用英语或印地英语。只用那种语言回。不要出现中文。Felha 这个名字可以照写。";
   }
 }
 
 export function languageRewriteInstruction(language: UserLanguage): string {
   switch (language) {
     case "chinese":
-      return "上一稿把英文写进中文了。用同一意思改成纯中文。不要英文单词。还是短信，不要变成长文。";
+      return "上一稿把英文写进中文了。用同一意思改成中文。英文单词去掉，但 Felha 可以留。还是短信，不要变成长文。";
     case "arabic":
-      return "上一稿用了中文。用同一意思改成纯阿拉伯语。一个汉字都不要。还是短信，不要变成长文。";
+      return "上一稿写成中文了。用同一意思改成纯阿拉伯语。一个汉字都不要，不要照抄中文示例。Felha 可以留。还是短信，不要变成长文。";
     case "latin":
-      return "上一稿用了中文。用同一意思改成纯英文。一个汉字都不要。还是短信，不要变成长文。";
+      return "上一稿用了中文。用同一意思改成纯英文。一个汉字都不要。Felha 可以留。还是短信，不要变成长文。";
   }
 }
 
 export function shouldRewriteLanguage(language: UserLanguage, reply: string): boolean {
   switch (language) {
     case "chinese":
-      return latinLetterCount(reply) >= 6;
+      return latinLetterCount(reply.replace(/felha/gi, "")) >= 6;
     case "arabic":
     case "latin":
       return containsChinese(reply);

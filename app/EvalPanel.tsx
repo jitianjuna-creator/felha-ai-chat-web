@@ -121,7 +121,7 @@ export function EvalPanel({
         <p className="text-xs text-[#888888]">
           {running
             ? `评测中 ${progress}，大约一两分钟，不写入聊天记录`
-            : `每次临场出题，约 ${total} 句（中文 + 阿语），仍覆盖住哪、天气、荐歌、赴约这些硬伤`}
+            : `每次临场出题，每句单独开聊，避免串台。约 ${total} 句（中文 + 阿语）`}
         </p>
       </div>
       {error ? <p className="mt-2 text-xs text-[#e65a5a]">{error}</p> : null}

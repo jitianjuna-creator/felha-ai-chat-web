@@ -5,14 +5,14 @@ import {
 } from "./language";
 import { SUMMARY_MODEL_ID } from "./models";
 import { completeChat } from "./openrouter";
-import { repeatRewriteInstruction } from "./persona";
+import { leakRewriteInstruction, repeatRewriteInstruction } from "./persona";
 import {
   companionMaxTokens,
   companionTemperature,
   makeRequestMessages,
   makeSummaryMessages,
 } from "./prompt";
-import { cleanedReply, isApproximateRepeat } from "./reply";
+import { cleanedReply, isApproximateRepeat, looksLikePromptLeak } from "./reply";
 import type { ChatMessage, ClientClock } from "./types";
 
 export async function generateCompanionReply(input: {
@@ -59,17 +59,19 @@ export async function generateCompanionReply(input: {
   const lastUser = [...input.recent].reverse().find((message) => message.role === "user");
   const language = resolvedUserLanguage(lastUser?.content ?? "", input.recent);
   if (shouldRewriteLanguage(language, reply)) {
-    reply = await completeChat({
-      apiKey: input.apiKey,
-      model: input.model,
-      messages: [
-        ...requestMessages,
-        { role: "assistant", content: reply },
-        { role: "system", content: languageRewriteInstruction(language) },
-      ],
-      temperature: companionTemperature,
-      maxTokens: companionMaxTokens,
-    });
+    for (let attempt = 0; attempt < 2 && shouldRewriteLanguage(language, reply); attempt += 1) {
+      reply = await completeChat({
+        apiKey: input.apiKey,
+        model: input.model,
+        messages: [
+          ...requestMessages,
+          { role: "assistant", content: reply },
+          { role: "system", content: languageRewriteInstruction(language) },
+        ],
+        temperature: companionTemperature,
+        maxTokens: companionMaxTokens,
+      });
+    }
   }
 
   const previousAssistant = input.recent
@@ -78,6 +80,24 @@ export async function generateCompanionReply(input: {
   const lastUserText = lastUser?.content ?? "";
   const repeatAgainst = [...previousAssistant.slice(-2), lastUserText];
   let content = cleanedReply(reply, previousAssistant);
+  if (looksLikePromptLeak(reply) || looksLikePromptLeak(content)) {
+    try {
+      reply = await completeChat({
+        apiKey: input.apiKey,
+        model: input.model,
+        messages: [
+          ...requestMessages,
+          { role: "assistant", content: reply },
+          { role: "system", content: leakRewriteInstruction },
+        ],
+        temperature: companionTemperature,
+        maxTokens: companionMaxTokens,
+      });
+      content = cleanedReply(reply, previousAssistant);
+    } catch {
+      // Keep the first reply if the retry fails.
+    }
+  }
   if (isApproximateRepeat(content, repeatAgainst) || isApproximateRepeat(reply, repeatAgainst)) {
     try {
       reply = await completeChat({
