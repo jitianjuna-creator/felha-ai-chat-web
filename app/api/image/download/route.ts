@@ -1,4 +1,5 @@
 export const runtime = "nodejs";
+export const preferredRegion = ["hkg1", "sin1", "hnd1"];
 
 const allowedHost = /(^|\.)aliyuncs\.com$/i;
 

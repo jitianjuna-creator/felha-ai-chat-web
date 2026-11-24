@@ -6,6 +6,7 @@ import {
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
+export const preferredRegion = ["hkg1", "sin1", "hnd1"];
 
 export async function POST(request: Request): Promise<Response> {
   const apiKey = process.env.MINIMAX_API_KEY?.trim();
