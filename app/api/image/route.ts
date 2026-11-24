@@ -1,6 +1,8 @@
 import {
   buildMiniMaxPayload,
+  estimateImageCostCny,
   parseGenerateInput,
+  parseImageUsage,
   type MiniMaxImageResult,
 } from "@/lib/image/minimax";
 
@@ -73,11 +75,13 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError(502, firstError || "没有生成出图片");
   }
 
+  const usage = parseImageUsage(json?.usage ?? null);
   return Response.json({
     images,
     outputFormat: json?.output_format ?? parsed.outputFormat,
     requestId: json?.request_id ?? null,
-    usage: json?.usage ?? null,
+    usage,
+    cost: estimateImageCostCny(parsed.model, usage),
     payload,
   });
 }

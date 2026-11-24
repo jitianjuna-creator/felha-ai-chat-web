@@ -11,7 +11,9 @@ import {
   type ImageFormat,
   type ImageModel,
   type ImageRatio,
+  type ImageCostEstimate,
   type MiniMaxImageResult,
+  type MiniMaxImageUsage,
   type SizeMode,
 } from "@/lib/image/minimax";
 
@@ -26,7 +28,8 @@ type GenerateResponse = {
   images?: MiniMaxImageResult[];
   outputFormat?: string;
   requestId?: string | null;
-  usage?: unknown;
+  usage?: MiniMaxImageUsage | null;
+  cost?: ImageCostEstimate | null;
   payload?: Record<string, unknown>;
   error?: string;
 };
@@ -286,10 +289,29 @@ export default function HomePage() {
       <section className="min-w-0 flex-1 rounded-2xl bg-white p-4 shadow-sm">
         {result?.images?.length ? (
           <div className="flex flex-col gap-4">
-            <p className="text-xs text-[#888888]">
-              {elapsedMs} ms
-              {result.requestId ? ` · ${result.requestId}` : ""}
-            </p>
+            <div className="text-sm">
+              {result.cost ? (
+                <p>
+                  本次约{" "}
+                  <span className="font-semibold">¥{result.cost.cny.toFixed(4)}</span>
+                  {result.cost.generatedImages > 0
+                    ? ` · ${result.cost.generatedImages} 张`
+                    : ""}
+                </p>
+              ) : null}
+              <p className="mt-1 text-xs text-[#888888]">
+                {elapsedMs} ms
+                {result.requestId ? ` · ${result.requestId}` : ""}
+                {result.cost
+                  ? ` · 文本 ${result.cost.textTokens} + 出图 ${result.cost.imageOutTokens} tokens`
+                  : ""}
+              </p>
+              {result.cost ? (
+                <p className="mt-1 text-xs text-[#888888]">
+                  按 MiniMax 国内站 token 单价估算，以账单为准。
+                </p>
+              ) : null}
+            </div>
             {result.images.map((image, index) => (
               <figure key={image.url ?? index} className="flex flex-col gap-2">
                 <div

@@ -43,6 +43,67 @@ export type MiniMaxImageResult = {
   error?: { code?: string; message?: string };
 };
 
+export type MiniMaxImageUsage = {
+  generated_images?: number;
+  total_tokens?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  input_tokens_details?: { text_tokens?: number; image_tokens?: number };
+  output_tokens_details?: { image_tokens?: number };
+};
+
+export type ImageCostEstimate = {
+  cny: number;
+  textTokens: number;
+  imageInTokens: number;
+  imageOutTokens: number;
+  generatedImages: number;
+  model: ImageModel;
+};
+
+/** Official CN token prices, yuan per million. https://platform.minimax.cn/docs/pricing/overview */
+const cnyPerMillion = {
+  "MiniMax-H3-Image": { text: 15, imageIn: 10, imageOut: 25 },
+  "MiniMax-H3-Image-Highspeed": { text: 15, imageIn: 20, imageOut: 50 },
+} as const;
+
+export function parseImageUsage(value: unknown): MiniMaxImageUsage | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  return value as MiniMaxImageUsage;
+}
+
+export function estimateImageCostCny(
+  model: ImageModel,
+  usage: MiniMaxImageUsage | null,
+): ImageCostEstimate | null {
+  if (!usage) {
+    return null;
+  }
+  const details = usage.input_tokens_details;
+  const textTokens = Number(details?.text_tokens ?? usage.input_tokens ?? 0);
+  const imageInTokens = Number(details?.image_tokens ?? 0);
+  const imageOutTokens = Number(
+    usage.output_tokens_details?.image_tokens ?? usage.output_tokens ?? 0,
+  );
+  if (![textTokens, imageInTokens, imageOutTokens].every(Number.isFinite)) {
+    return null;
+  }
+  const price = cnyPerMillion[model];
+  const cny =
+    (textTokens * price.text + imageInTokens * price.imageIn + imageOutTokens * price.imageOut) /
+    1_000_000;
+  return {
+    cny,
+    textTokens,
+    imageInTokens,
+    imageOutTokens,
+    generatedImages: Number(usage.generated_images ?? 0),
+    model,
+  };
+}
+
 function isOneOf<T extends string>(value: string, list: readonly T[]): value is T {
   return (list as readonly string[]).includes(value);
 }
