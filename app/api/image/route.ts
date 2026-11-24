@@ -9,9 +9,9 @@ export const maxDuration = 120;
 export const preferredRegion = ["hkg1", "sin1", "hnd1"];
 
 export async function POST(request: Request): Promise<Response> {
-  const apiKey = process.env.MINIMAX_API_KEY?.trim();
+  const apiKey = String(process.env.MINIMAX_API_KEY ?? "").trim();
   if (!apiKey) {
-    return jsonError(500, "服务未配置 MiniMax Key");
+    return jsonError(500, "Vercel 未读到 MINIMAX_API_KEY，保存后需要 Redeploy");
   }
 
   let body: unknown;
