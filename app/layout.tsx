@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "阿柚聊天测试",
-  description: "Felha 拟人短信测试页",
+  title: "生图测试",
+  description: "MiniMax H3 图片生成试验页",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -1,375 +1,389 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { localClockFromDate } from "@/lib/companion/clock";
-import { modelOptions } from "@/lib/companion/models";
-import { defaultPersona, resolvedPersona } from "@/lib/companion/persona";
-import { maxUserInputChars, recentMessageLimit, splitHistory } from "@/lib/companion/prompt";
+import { FormEvent, useMemo, useState } from "react";
 import {
-  emptySession,
-  getServerSessionSnapshot,
-  getSessionSnapshot,
-  subscribeSession,
-  writeSession,
-} from "@/lib/companion/storage";
-import type { ChatMessage, StoredSession } from "@/lib/companion/types";
-import { EvalPanel } from "./EvalPanel";
+  defaultImageModel,
+  imageAreas,
+  imageFormats,
+  imageModels,
+  imageRatios,
+  type ImageArea,
+  type ImageFormat,
+  type ImageModel,
+  type ImageRatio,
+  type MiniMaxImageResult,
+  type SizeMode,
+} from "@/lib/image/minimax";
+
+const samplePrompts = [
+  "27 岁东亚女生，短发，穿白色 T 恤，室内窗边自然光，像手机自拍，不要美颜过度",
+  "海湾夜晚的屋顶，远处城市灯火，暖色街灯，电影感，竖构图",
+  "一只橘猫趴在浅色木桌上睡觉，旁边一杯冰美式，俯拍，日系清淡",
+  "产品图：磨砂黑无线耳机盒放在浅灰背景，柔和棚灯，无文字无 logo",
+];
+
+type GenerateResponse = {
+  images?: MiniMaxImageResult[];
+  outputFormat?: string;
+  requestId?: string | null;
+  usage?: unknown;
+  payload?: Record<string, unknown>;
+  error?: string;
+};
 
 export default function HomePage() {
-  const session = useSyncExternalStore(
-    subscribeSession,
-    getSessionSnapshot,
-    getServerSessionSnapshot,
-  );
-  const [draft, setDraft] = useState("");
-  const [personaOpen, setPersonaOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [sending, setSending] = useState(false);
-  const copyTimer = useRef<number>(0);
+  const [prompt, setPrompt] = useState(samplePrompts[0]);
+  const [model, setModel] = useState<ImageModel>(defaultImageModel);
+  const [sizeMode, setSizeMode] = useState<SizeMode>("area");
+  const [area, setArea] = useState<ImageArea>("1K");
+  const [aspectRatio, setAspectRatio] = useState<ImageRatio>("1:1");
+  const [width, setWidth] = useState(1024);
+  const [height, setHeight] = useState(1024);
+  const [n, setN] = useState(1);
+  const [outputFormat, setOutputFormat] = useState<ImageFormat>("jpeg");
+  const [outputCompression, setOutputCompression] = useState(95);
+  const [disablePromptEnhanced, setDisablePromptEnhanced] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const listRef = useRef<HTMLDivElement>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [result, setResult] = useState<GenerateResponse | null>(null);
 
-  useEffect(() => {
-    const node = listRef.current;
-    if (!node) {
-      return;
+  const previewRatio = useMemo(() => {
+    if (sizeMode === "custom" && height > 0) {
+      return `${width} / ${height}`;
     }
-    node.scrollTop = node.scrollHeight;
-  }, [session.messages, sending]);
+    if (aspectRatio === "auto") {
+      return "1 / 1";
+    }
+    return aspectRatio.replace(":", " / ");
+  }, [aspectRatio, height, sizeMode, width]);
 
-  useEffect(() => {
-    return () => {
-      window.clearTimeout(copyTimer.current);
-    };
-  }, []);
-
-  const selectedModel = useMemo(
-    () => modelOptions.find((item) => item.modelId === session.modelId) ?? modelOptions[0],
-    [session.modelId],
-  );
-
-  function updateSession(updater: (current: StoredSession) => StoredSession) {
-    writeSession(updater(getSessionSnapshot()));
-  }
-
-  async function submitMessage(event?: FormEvent) {
+  async function onGenerate(event?: FormEvent) {
     event?.preventDefault();
-    const text = draft.trim();
-    if (!text || sending) {
+    if (busy) {
       return;
     }
-    if (text.length > maxUserInputChars) {
-      setError(`消息过长，最多 ${maxUserInputChars} 字`);
+    const text = prompt.trim();
+    if (!text) {
+      setError("请填写描述");
       return;
     }
-
-    const current = getSessionSnapshot();
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: text,
-      createdAt: Date.now(),
-    };
-    const nextMessages = [...current.messages, userMessage];
-    const { recent, older } = splitHistory(nextMessages);
-    const unsummarized = older.slice(current.summarizedCount);
-
-    setDraft("");
+    setBusy(true);
     setError("");
-    setSending(true);
-    writeSession({
-      ...current,
-      messages: nextMessages,
-    });
-    const startedAt = Date.now();
-
+    setResult(null);
+    const started = Date.now();
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch("/api/image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: current.modelId,
-          persona: resolvedPersona(current.persona),
-          recent,
-          unsummarized,
-          summary: current.summary,
-          clock: localClockFromDate(),
+          prompt: text,
+          model,
+          sizeMode,
+          area,
+          aspectRatio,
+          width,
+          height,
+          n,
+          outputFormat,
+          outputCompression,
+          disablePromptEnhanced,
         }),
       });
-      const payload = (await response.json()) as { content?: string; summary?: string; error?: string };
-      if (!response.ok || !payload.content) {
-        throw new Error(payload.error || "请求失败");
+      const json = (await response.json()) as GenerateResponse;
+      setElapsedMs(Date.now() - started);
+      if (!response.ok || json.error) {
+        setError(json.error || "生成失败");
+        return;
       }
-      await waitForTyping(payload.content, Date.now() - startedAt);
-      const assistantMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: payload.content,
-        createdAt: Date.now(),
-      };
-      const latest = getSessionSnapshot();
-      writeSession({
-        ...latest,
-        messages: [...latest.messages, assistantMessage],
-        summary: payload.summary ?? latest.summary,
-        summarizedCount: older.length > 0 ? older.length : latest.summarizedCount,
-      });
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "请求失败";
-      setError(message);
-      const latest = getSessionSnapshot();
-      writeSession({
-        ...latest,
-        messages: [
-          ...latest.messages,
-          {
-            id: crypto.randomUUID(),
-            role: "notice",
-            content: message,
-            createdAt: Date.now(),
-          },
-        ],
-      });
-    } finally {
-      setSending(false);
-    }
-  }
-
-  function newChat() {
-    setError("");
-    updateSession((current) => ({
-      ...emptySession(current.persona),
-      modelId: current.modelId,
-      persona: current.persona,
-    }));
-  }
-
-  function clearChat() {
-    setError("");
-    updateSession((current) => ({
-      ...current,
-      messages: emptySession(current.persona).messages,
-      summary: "",
-      summarizedCount: 0,
-    }));
-  }
-
-  function resetPersona() {
-    updateSession((current) => ({
-      ...current,
-      persona: defaultPersona,
-    }));
-  }
-
-  async function copyChat() {
-    const text = formatChatTranscript(session.messages, selectedModel.title);
-    if (text.length === 0) {
-      return;
-    }
-    try {
-      await writeClipboard(text);
-      setCopied(true);
-      window.clearTimeout(copyTimer.current);
-      copyTimer.current = window.setTimeout(() => setCopied(false), 1600);
+      setResult(json);
     } catch {
-      setError("复制失败，请再试一次");
+      setElapsedMs(Date.now() - started);
+      setError("网络失败，请再试。若已点过生成，不要连点。");
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-[760px] flex-col px-3 py-3 sm:px-4">
-      <header className="rounded-2xl bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-semibold">阿柚聊天测试</h1>
-            <p className="mt-1 text-sm text-[#888888]">
-              完整记录只存在这个浏览器。发给模型的是滚动摘要和最近 {recentMessageLimit} 条。
-            </p>
-          </div>
-          <button
-            type="button"
-            className="rounded-lg bg-[#f0f0f0] px-3 py-2 text-sm"
-            onClick={() => setPersonaOpen((open) => !open)}
-          >
-            {personaOpen ? "收起人设" : "编辑人设"}
-          </button>
+    <main className="mx-auto flex min-h-full max-w-6xl flex-col gap-4 px-4 py-6 lg:flex-row">
+      <form
+        className="flex w-full shrink-0 flex-col gap-4 rounded-2xl bg-white p-4 shadow-sm lg:w-[380px]"
+        onSubmit={(event) => void onGenerate(event)}
+      >
+        <div>
+          <h1 className="text-lg font-semibold">生图测试</h1>
+          <p className="mt-1 text-xs text-[#888888]">
+            MiniMax-H3 · 默认 1K。生成中不要连点，超时也可能已扣费。
+          </p>
         </div>
 
-        <label className="mt-4 block text-sm text-[#555555]">
-          模型
+        <label className="block">
+          <span className="text-sm">描述</span>
+          <textarea
+            className="mt-1 h-36 w-full rounded-lg border border-[#ececec] bg-[#f8f8f8] p-3 text-sm leading-6"
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            maxLength={8000}
+          />
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {samplePrompts.map((sample) => (
+            <button
+              key={sample}
+              type="button"
+              className="rounded-full border border-[#ececec] px-2.5 py-1 text-left text-xs text-[#555555]"
+              onClick={() => setPrompt(sample)}
+            >
+              {sample.slice(0, 18)}…
+            </button>
+          ))}
+        </div>
+
+        <label className="block">
+          <span className="text-sm">模型</span>
           <select
             className="mt-1 w-full rounded-lg border border-[#ececec] bg-[#f8f8f8] px-3 py-2 text-sm"
-            value={session.modelId}
-            onChange={(event) =>
-              updateSession((current) => ({
-                ...current,
-                modelId: event.target.value,
-              }))
-            }
+            value={model}
+            onChange={(event) => setModel(event.target.value as ImageModel)}
           >
-            {modelOptions.map((option) => (
-              <option key={option.modelId} value={option.modelId}>
-                {option.title} · {option.subtitle}
+            {imageModels.map((item) => (
+              <option key={item} value={item}>
+                {item === defaultImageModel ? "标准 MiniMax-H3-Image" : "极速 MiniMax-H3-Image-Highspeed"}
               </option>
             ))}
           </select>
         </label>
-        <p className="mt-1 text-xs text-[#999999]">{selectedModel.modelId}</p>
 
-        {personaOpen ? (
-          <div className="mt-4">
-            <textarea
-              className="h-56 w-full rounded-lg border border-[#ececec] bg-[#f8f8f8] p-3 text-sm leading-6"
-              value={session.persona}
-              onChange={(event) =>
-                updateSession((current) => ({
-                  ...current,
-                  persona: event.target.value,
-                }))
-              }
+        <fieldset>
+          <legend className="text-sm">尺寸方式</legend>
+          <div className="mt-2 flex gap-2">
+            <ModeButton
+              active={sizeMode === "area"}
+              onClick={() => setSizeMode("area")}
+              label="档位 + 比例"
             />
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="rounded-lg px-3 py-2 text-sm text-[#4c8dff]"
-                onClick={resetPersona}
-              >
-                恢复默认人设
-              </button>
-            </div>
+            <ModeButton
+              active={sizeMode === "custom"}
+              onClick={() => setSizeMode("custom")}
+              label="自定义宽高"
+            />
           </div>
-        ) : null}
+        </fieldset>
 
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" className="rounded-lg px-3 py-2 text-sm text-[#e65a5a]" onClick={clearChat}>
-            清空本页
-          </button>
-          <button type="button" className="rounded-lg px-3 py-2 text-sm text-[#4c8dff]" onClick={newChat}>
-            新对话
-          </button>
-          <button
-            type="button"
-            className="rounded-lg px-3 py-2 text-sm text-[#4c8dff] disabled:opacity-40"
-            onClick={() => void copyChat()}
-            disabled={session.messages.length === 0}
-          >
-            {copied ? "已复制" : "复制对话"}
-          </button>
-        </div>
-        <EvalPanel
-          modelId={session.modelId}
-          modelTitle={selectedModel.title}
-          persona={session.persona}
-          busy={sending}
-        />
-      </header>
-
-      <section
-        ref={listRef}
-        className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-2xl bg-white p-3 shadow-sm"
-      >
-        {session.messages.length === 0 && !sending ? (
-          <p className="py-16 text-center text-sm text-[#999999]">发一条短信开始聊</p>
+        {sizeMode === "area" ? (
+          <>
+            <div>
+              <p className="text-sm">像素档位</p>
+              <div className="mt-2 flex gap-2">
+                {imageAreas.map((item) => (
+                  <ModeButton
+                    key={item}
+                    active={area === item}
+                    onClick={() => setArea(item)}
+                    label={item}
+                  />
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-[#888888]">
+                1K ≈ 1024²，2K ≈ 2048²，4K ≈ 4096²。默认 1K，4K 更贵更慢。
+              </p>
+            </div>
+            <label className="block">
+              <span className="text-sm">宽高比</span>
+              <select
+                className="mt-1 w-full rounded-lg border border-[#ececec] bg-[#f8f8f8] px-3 py-2 text-sm"
+                value={aspectRatio}
+                onChange={(event) => setAspectRatio(event.target.value as ImageRatio)}
+              >
+                {imageRatios.map((item) => (
+                  <option key={item} value={item}>
+                    {item === "auto"
+                      ? "auto（让模型自己选比例，仅默认扩写时可用）"
+                      : item}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
         ) : (
-          <div className="flex flex-col gap-3">
-            {session.messages.map((message) => (
-              <Bubble key={message.id} message={message} />
+          <div className="grid grid-cols-2 gap-3">
+            <NumberField label="宽 px" value={width} min={256} max={7104} onChange={setWidth} />
+            <NumberField label="高 px" value={height} min={256} max={7104} onChange={setHeight} />
+            <p className="col-span-2 text-xs text-[#888888]">
+              面积要在 65 万到 2000 万像素，比例 1:3–3:1。选自定义时不要再传档位/比例。
+            </p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-sm">格式</span>
+            <select
+              className="mt-1 w-full rounded-lg border border-[#ececec] bg-[#f8f8f8] px-3 py-2 text-sm"
+              value={outputFormat}
+              onChange={(event) => setOutputFormat(event.target.value as ImageFormat)}
+            >
+              {imageFormats.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
+          <NumberField label="张数 n" value={n} min={1} max={4} onChange={setN} />
+        </div>
+
+        <label className="block">
+          <span className="text-sm">
+            JPEG/WebP 质量 {outputCompression}
+            {outputFormat === "png" ? "（png 忽略）" : ""}
+          </span>
+          <input
+            className="mt-2 w-full"
+            type="range"
+            min={0}
+            max={100}
+            value={outputCompression}
+            disabled={outputFormat === "png"}
+            onChange={(event) => setOutputCompression(Number(event.target.value))}
+          />
+        </label>
+
+        <label className="flex cursor-pointer items-start gap-2 rounded-lg bg-[#f8f8f8] p-3">
+          <input
+            className="mt-0.5"
+            type="checkbox"
+            checked={disablePromptEnhanced}
+            onChange={(event) => {
+              const checked = event.target.checked;
+              setDisablePromptEnhanced(checked);
+              if (checked && aspectRatio === "auto") {
+                setAspectRatio("1:1");
+              }
+            }}
+          />
+          <span>
+            <span className="block text-sm">严格按我写的描述出图</span>
+            <span className="mt-1 block text-xs leading-5 text-[#888888]">
+              默认不勾：模型会先把描述扩写成更细的英文再画，出图更稳，但可能跟原句不完全一样。出图后可看右侧「模型实际用的描述」。
+              勾上后不再扩写，按原文出，适合测听不听原句。勾上时请选明确宽高比，不能用 auto。
+            </span>
+          </span>
+        </label>
+
+        {error ? <p className="text-sm text-[#e65a5a]">{error}</p> : null}
+
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-xl bg-[#4c8dff] px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {busy ? "生成中…" : "生成"}
+        </button>
+      </form>
+
+      <section className="min-w-0 flex-1 rounded-2xl bg-white p-4 shadow-sm">
+        {result?.images?.length ? (
+          <div className="flex flex-col gap-4">
+            <p className="text-xs text-[#888888]">
+              {elapsedMs} ms
+              {result.requestId ? ` · ${result.requestId}` : ""}
+            </p>
+            {result.images.map((image, index) => (
+              <figure key={image.url ?? index} className="flex flex-col gap-2">
+                <div
+                  className="overflow-hidden rounded-xl bg-[#f0f0f0]"
+                  style={{ aspectRatio: previewRatio }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={image.url} alt="" className="h-full w-full object-contain" />
+                </div>
+                <figcaption className="flex flex-wrap items-center gap-3 text-xs text-[#888888]">
+                  <span>{image.size || "未知尺寸"}</span>
+                  <a
+                    className="rounded-lg bg-[#4c8dff] px-3 py-1.5 text-white"
+                    href={`/api/image/download?url=${encodeURIComponent(image.url || "")}`}
+                  >
+                    下载
+                  </a>
+                </figcaption>
+                {image.revised_prompt ? (
+                  <details className="text-xs text-[#666666]">
+                    <summary className="cursor-pointer">模型实际用的描述（扩写后）</summary>
+                    <p className="mt-2 whitespace-pre-wrap leading-5">{image.revised_prompt}</p>
+                  </details>
+                ) : null}
+              </figure>
             ))}
-            {sending ? <p className="text-center text-xs text-[#888888]">正在输入…</p> : null}
+            {result.payload ? (
+              <details className="text-xs text-[#888888]">
+                <summary className="cursor-pointer">发给 MiniMax 的参数</summary>
+                <pre className="mt-2 overflow-auto rounded-lg bg-[#f8f8f8] p-3">
+                  {JSON.stringify(result.payload, null, 2)}
+                </pre>
+              </details>
+            ) : null}
+          </div>
+        ) : (
+          <div
+            className="flex h-[min(70vh,560px)] items-center justify-center rounded-xl bg-[#f0f0f0] text-sm text-[#999999]"
+            style={{ aspectRatio: previewRatio }}
+          >
+            {busy ? "生成中…" : "还没有图"}
           </div>
         )}
       </section>
-
-      <form
-        className="sticky bottom-0 mt-3 flex gap-2 rounded-2xl bg-white p-3 shadow-sm"
-        onSubmit={submitMessage}
-      >
-        <input
-          className="min-w-0 flex-1 rounded-xl border border-[#ececec] px-3 py-3 text-base outline-none"
-          value={draft}
-          placeholder="输入消息…"
-          maxLength={maxUserInputChars}
-          disabled={sending}
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <button
-          type="submit"
-          className="rounded-xl bg-[#4c8dff] px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
-          disabled={sending || draft.trim().length === 0}
-        >
-          发送
-        </button>
-      </form>
-      {error ? <p className="px-1 pt-2 text-xs text-[#e65a5a]">{error}</p> : null}
     </main>
   );
 }
 
-function Bubble({ message }: { message: ChatMessage }) {
-  if (message.role === "notice") {
-    return <p className="text-center text-xs text-[#888888]">{message.content}</p>;
-  }
-  const isUser = message.role === "user";
+function ModeButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div
-        className={`max-w-[82%] rounded-2xl px-3 py-2 text-[15px] leading-6 ${
-          isUser ? "bg-[#4c8dff] text-white" : "bg-[#f5f5f5] text-[#333333]"
-        }`}
-      >
-        <span className="opacity-70">{isUser ? "我：" : "阿柚："}</span>
-        {message.content}
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg px-3 py-1.5 text-sm ${
+        active ? "bg-[#4c8dff] text-white" : "bg-[#f3f3f3] text-[#333333]"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 
-function formatChatTranscript(messages: ChatMessage[], modelTitle: string): string {
-  const lines = messages
-    .map((message) => {
-      if (message.role === "user") {
-        return `我：${message.content}`;
-      }
-      if (message.role === "assistant") {
-        return `阿柚：${message.content}`;
-      }
-      if (message.role === "notice") {
-        return `系统：${message.content}`;
-      }
-      return "";
-    })
-    .filter((line) => line.length > 0);
-  if (lines.length === 0) {
-    return "";
-  }
-  return [`模型：${modelTitle}`, "", ...lines].join("\n");
-}
-
-async function waitForTyping(reply: string, elapsedMs: number): Promise<void> {
-  const visible = [...reply].filter((char) => !/\s/.test(char)).length;
-  const natural = 1800 + visible * 85 + Math.floor(Math.random() * 900);
-  const waitMs = Math.max(0, Math.min(7000, natural) - elapsedMs);
-  if (waitMs <= 0) {
-    return;
-  }
-  await new Promise((resolve) => window.setTimeout(resolve, waitMs));
-}
-
-async function writeClipboard(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const area = document.createElement("textarea");
-  area.value = text;
-  area.setAttribute("readonly", "");
-  area.style.position = "fixed";
-  area.style.left = "-9999px";
-  document.body.appendChild(area);
-  area.select();
-  const copied = document.execCommand("copy");
-  document.body.removeChild(area);
-  if (!copied) {
-    throw new Error("copy failed");
-  }
+function NumberField({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="text-sm">{label}</span>
+      <input
+        className="mt-1 w-full rounded-lg border border-[#ececec] bg-[#f8f8f8] px-3 py-2 text-sm"
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+    </label>
+  );
 }
