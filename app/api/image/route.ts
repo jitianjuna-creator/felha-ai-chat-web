@@ -3,6 +3,7 @@ import {
   estimateImageCostCny,
   parseGenerateInput,
   parseImageUsage,
+  publicMiniMaxPayload,
   type MiniMaxImageResult,
 } from "@/lib/image/minimax";
 
@@ -30,10 +31,11 @@ export async function POST(request: Request): Promise<Response> {
 
   const host = (process.env.MINIMAX_API_HOST || "https://api.minimax.cn").replace(/\/$/, "");
   const payload = buildMiniMaxPayload(parsed);
+  const path = parsed.imageDataUrl ? "/v1/images/edits" : "/v1/images/generations";
 
   let response: Response;
   try {
-    response = await fetch(`${host}/v1/images/generations`, {
+    response = await fetch(`${host}${path}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -82,7 +84,7 @@ export async function POST(request: Request): Promise<Response> {
     requestId: json?.request_id ?? null,
     usage,
     cost: estimateImageCostCny(parsed.model, usage),
-    payload,
+    payload: publicMiniMaxPayload(payload),
   });
 }
 

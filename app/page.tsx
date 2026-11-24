@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { DragEvent, FormEvent, useMemo, useRef, useState } from "react";
+import { prepareReferenceImage } from "@/lib/image/prepareReference";
 import {
   defaultImageModel,
   imageAreas,
@@ -22,6 +23,12 @@ const samplePrompts = [
   "海湾夜晚的屋顶，远处城市灯火，暖色街灯，电影感，竖构图",
   "一只橘猫趴在浅色木桌上睡觉，旁边一杯冰美式，俯拍，日系清淡",
   "产品图：磨砂黑无线耳机盒放在浅灰背景，柔和棚灯，无文字无 logo",
+];
+
+const editPrompts = [
+  "保持这个人的脸、发型和姿势，把衣服换成白色衬衫，室内窗边自然光",
+  "人物长相和构图不变，把背景换成海边日落",
+  "做成产品图：居中放在浅灰背景上，柔和棚灯，不要文字不要 logo",
 ];
 
 type GenerateResponse = {
@@ -50,6 +57,10 @@ export default function HomePage() {
   const [error, setError] = useState("");
   const [elapsedMs, setElapsedMs] = useState(0);
   const [result, setResult] = useState<GenerateResponse | null>(null);
+  const [referenceDataUrl, setReferenceDataUrl] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const promptChips = referenceDataUrl ? editPrompts : samplePrompts;
 
   const previewRatio = useMemo(() => {
     if (sizeMode === "custom" && height > 0) {
@@ -91,6 +102,7 @@ export default function HomePage() {
           outputFormat,
           outputCompression,
           disablePromptEnhanced,
+          imageDataUrl: referenceDataUrl,
         }),
       });
       const json = (await response.json()) as GenerateResponse;
@@ -105,6 +117,35 @@ export default function HomePage() {
       setError("网络失败，请再试。若已点过生成，不要连点。");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onPickReference(file: File) {
+    try {
+      const dataUrl = await prepareReferenceImage(file);
+      setReferenceDataUrl(dataUrl);
+      setError("");
+      if (samplePrompts.includes(prompt)) {
+        setPrompt(editPrompts[0]);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "参考图处理失败");
+    }
+  }
+
+  async function onDropReference(event: DragEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    setDragging(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) {
+      await onPickReference(file);
+    }
+  }
+
+  function clearReference() {
+    setReferenceDataUrl("");
+    if (editPrompts.includes(prompt)) {
+      setPrompt(samplePrompts[0]);
     }
   }
 
@@ -131,7 +172,7 @@ export default function HomePage() {
           />
         </label>
         <div className="flex flex-wrap gap-2">
-          {samplePrompts.map((sample) => (
+          {promptChips.map((sample) => (
             <button
               key={sample}
               type="button"
@@ -141,6 +182,59 @@ export default function HomePage() {
               {sample.slice(0, 18)}…
             </button>
           ))}
+        </div>
+
+        <div>
+          <p className="text-sm">参考图（可选）</p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) {
+                void onPickReference(file);
+              }
+            }}
+          />
+          {referenceDataUrl ? (
+            <div className="relative mt-2 overflow-hidden rounded-xl bg-[#f0f0f0]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={referenceDataUrl} alt="" className="max-h-48 w-full object-contain" />
+              <button
+                type="button"
+                className="absolute right-2 top-2 rounded-lg bg-white/90 px-2 py-1 text-xs"
+                onClick={clearReference}
+              >
+                移除
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(event) => void onDropReference(event)}
+              onClick={() => fileInputRef.current?.click()}
+              className={`mt-2 flex h-28 w-full items-center justify-center rounded-xl border border-dashed px-3 text-center text-xs leading-5 ${
+                dragging
+                  ? "border-[#4c8dff] bg-[#eef4ff] text-[#4c8dff]"
+                  : "border-[#d8d8d8] bg-[#f8f8f8] text-[#888888]"
+              }`}
+            >
+              把一张图拖进来，或点这里选择。
+              <br />
+              有参考图时按描述改图，没有就纯文生图。
+            </button>
+          )}
+          <p className="mt-1 text-xs text-[#888888]">
+            jpeg / png / webp，长边会压到 2048。带参考图大约 2 毛一张。
+          </p>
         </div>
 
         <label className="block">
@@ -253,27 +347,33 @@ export default function HomePage() {
           />
         </label>
 
-        <label className="flex cursor-pointer items-start gap-2 rounded-lg bg-[#f8f8f8] p-3">
-          <input
-            className="mt-0.5"
-            type="checkbox"
-            checked={disablePromptEnhanced}
-            onChange={(event) => {
-              const checked = event.target.checked;
-              setDisablePromptEnhanced(checked);
-              if (checked && aspectRatio === "auto") {
-                setAspectRatio("1:1");
-              }
-            }}
-          />
-          <span>
-            <span className="block text-sm">严格按我写的描述出图</span>
-            <span className="mt-1 block text-xs leading-5 text-[#888888]">
-              默认不勾：模型会先把描述扩写成更细的英文再画，出图更稳，但可能跟原句不完全一样。出图后可看右侧「模型实际用的描述」。
-              勾上后不再扩写，按原文出，适合测听不听原句。勾上时请选明确宽高比，不能用 auto。
+        {referenceDataUrl ? (
+          <p className="rounded-lg bg-[#f8f8f8] p-3 text-xs leading-5 text-[#888888]">
+            带参考图时官方会强制扩写描述，不能「严格按原文」。出图后仍可看右侧「模型实际用的描述」。
+          </p>
+        ) : (
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg bg-[#f8f8f8] p-3">
+            <input
+              className="mt-0.5"
+              type="checkbox"
+              checked={disablePromptEnhanced}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setDisablePromptEnhanced(checked);
+                if (checked && aspectRatio === "auto") {
+                  setAspectRatio("1:1");
+                }
+              }}
+            />
+            <span>
+              <span className="block text-sm">严格按我写的描述出图</span>
+              <span className="mt-1 block text-xs leading-5 text-[#888888]">
+                默认不勾：模型会先把描述扩写成更细的英文再画，出图更稳，但可能跟原句不完全一样。出图后可看右侧「模型实际用的描述」。
+                勾上后不再扩写，按原文出，适合测听不听原句。勾上时请选明确宽高比，不能用 auto。
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
+        )}
 
         {error ? <p className="text-sm text-[#e65a5a]">{error}</p> : null}
 
@@ -303,7 +403,9 @@ export default function HomePage() {
                 {elapsedMs} ms
                 {result.requestId ? ` · ${result.requestId}` : ""}
                 {result.cost
-                  ? ` · 文本 ${result.cost.textTokens} + 出图 ${result.cost.imageOutTokens} tokens`
+                  ? ` · 文本 ${result.cost.textTokens}${
+                      result.cost.imageInTokens > 0 ? ` + 参考图 ${result.cost.imageInTokens}` : ""
+                    } + 出图 ${result.cost.imageOutTokens} tokens`
                   : ""}
               </p>
               {result.cost ? (

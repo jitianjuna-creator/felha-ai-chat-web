@@ -34,6 +34,7 @@ export type ImageGenerateInput = {
   outputFormat: ImageFormat;
   outputCompression: number;
   disablePromptEnhanced: boolean;
+  imageDataUrl: string;
 };
 
 export type MiniMaxImageResult = {
@@ -121,7 +122,17 @@ export function parseGenerateInput(body: unknown): ImageGenerateInput | string {
     return "描述过长，最多 8000 字";
   }
 
-  const disablePromptEnhanced = Boolean(record.disablePromptEnhanced);
+  const imageDataUrl = typeof record.imageDataUrl === "string" ? record.imageDataUrl : "";
+  if (imageDataUrl) {
+    if (!/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(imageDataUrl)) {
+      return "参考图格式只支持 jpeg / png / webp";
+    }
+    if (imageDataUrl.length > 3_000_000) {
+      return "参考图太大，请压缩后再试";
+    }
+  }
+
+  const disablePromptEnhanced = imageDataUrl ? false : Boolean(record.disablePromptEnhanced);
 
   const model = typeof record.model === "string" ? record.model : defaultImageModel;
   if (!isOneOf(model, imageModels)) {
@@ -192,7 +203,8 @@ export function parseGenerateInput(body: unknown): ImageGenerateInput | string {
     n,
     outputFormat,
     outputCompression,
-    disablePromptEnhanced,
+    disablePromptEnhanced: imageDataUrl ? false : disablePromptEnhanced,
+    imageDataUrl,
   };
 }
 
@@ -204,7 +216,9 @@ export function buildMiniMaxPayload(input: ImageGenerateInput): Record<string, u
     output_format: input.outputFormat,
     response_format: "url",
   };
-  if (input.disablePromptEnhanced) {
+  if (input.imageDataUrl) {
+    payload.images = [{ image_url: input.imageDataUrl }];
+  } else if (input.disablePromptEnhanced) {
     payload.disable_prompt_enhanced = true;
   }
   if (input.outputFormat !== "png") {
@@ -217,4 +231,24 @@ export function buildMiniMaxPayload(input: ImageGenerateInput): Record<string, u
     payload.aspect_ratio = input.aspectRatio;
   }
   return payload;
+}
+
+export function publicMiniMaxPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const images = payload.images;
+  if (!Array.isArray(images)) {
+    return payload;
+  }
+  return {
+    ...payload,
+    images: images.map((item, index) => {
+      if (!item || typeof item !== "object") {
+        return item;
+      }
+      const imageUrl = (item as { image_url?: unknown }).image_url;
+      if (typeof imageUrl === "string" && imageUrl.startsWith("data:")) {
+        return { image_url: `已上传参考图 ${index + 1}` };
+      }
+      return item;
+    }),
+  };
 }
